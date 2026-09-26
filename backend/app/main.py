@@ -5,7 +5,7 @@ from app.database.mongodb import (
     initialize_database,
 )
 from app.routes.dataset_routes import router as dataset_router
-
+from app.routes.target_routes import router as target_router
 
 app = FastAPI(
     title="AutoML Studio API",
@@ -49,7 +49,7 @@ def startup_event():
 app.include_router(
     dataset_router
 )
-
+app.include_router(target_router)
 
 @app.get("/")
 def root():

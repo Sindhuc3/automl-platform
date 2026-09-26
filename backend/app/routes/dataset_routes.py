@@ -10,15 +10,12 @@ from fastapi import (
 from app.database.mongodb import (
     check_database_connection,
 )
-from app.schemas.dataset_schema import (
-    TargetSelection,
-)
+
 from app.services.dataset_service import (
     get_dataset,
     get_quality_report,
     list_datasets,
     process_uploaded_dataset,
-    set_target_column,
 )
 
 
@@ -27,6 +24,10 @@ router = APIRouter(
     tags=["Datasets"],
 )
 
+
+# ------------------------------------------
+# Upload Dataset
+# ------------------------------------------
 
 @router.post("/upload")
 async def upload_dataset(
@@ -89,6 +90,10 @@ async def upload_dataset(
         )
 
 
+# ------------------------------------------
+# List Datasets
+# ------------------------------------------
+
 @router.get("")
 def get_all_datasets():
 
@@ -103,6 +108,10 @@ def get_all_datasets():
         "datasets": list_datasets()
     }
 
+
+# ------------------------------------------
+# Get Single Dataset
+# ------------------------------------------
 
 @router.get("/{dataset_id}")
 def get_single_dataset(
@@ -130,6 +139,10 @@ def get_single_dataset(
     return dataset
 
 
+# ------------------------------------------
+# Get Quality Report
+# ------------------------------------------
+
 @router.get("/{dataset_id}/quality-report")
 def get_dataset_quality_report(
     dataset_id: str,
@@ -154,31 +167,3 @@ def get_dataset_quality_report(
         )
 
     return report
-
-
-@router.post("/{dataset_id}/target")
-def save_target_column(
-    dataset_id: str,
-    selection: TargetSelection,
-):
-
-    if not check_database_connection():
-
-        raise HTTPException(
-            status_code=503,
-            detail="MongoDB is not available.",
-        )
-
-    try:
-
-        return set_target_column(
-            dataset_id,
-            selection.target_column,
-        )
-
-    except ValueError as exc:
-
-        raise HTTPException(
-            status_code=400,
-            detail=str(exc),
-        )

@@ -126,7 +126,7 @@ function UploadDataset() {
       );
 
       navigate(
-        `/analysis/${result.dataset_id}`
+        `/datasets/${result.dataset_id}`
       );
 
     } catch (err) {
@@ -213,10 +213,9 @@ function UploadDataset() {
 
           <div
             className={
-              `drop-zone ${
-                isDragging
-                  ? "drop-zone-active"
-                  : ""
+              `drop-zone ${isDragging
+                ? "drop-zone-active"
+                : ""
               }`
             }
 

@@ -10,8 +10,7 @@ import {
 } from "react-router-dom";
 
 import {
-  getDataset,
-  saveTargetColumn
+  getDataset
 } from "../services/datasetApi";
 
 
@@ -36,8 +35,7 @@ function DatasetAnalysis() {
   const [targetColumn, setTargetColumn] =
     useState("");
 
-  const [savingTarget, setSavingTarget] =
-    useState(false);
+
 
 
   useEffect(() => {
@@ -106,7 +104,7 @@ function DatasetAnalysis() {
     );
 
 
-  async function handleTargetContinue() {
+  function handleTargetContinue() {
 
     if (!targetColumn) {
 
@@ -117,41 +115,25 @@ function DatasetAnalysis() {
       return;
     }
 
-    try {
+    setError("");
 
-      setSavingTarget(true);
+    // Pass the dataset information to Module 2.
+    sessionStorage.setItem(
+      "automlDataset",
+      JSON.stringify(dataset)
+    );
 
-      setError("");
+    // Pass the user's selected target.
+    sessionStorage.setItem(
+      "automlSelectedTarget",
+      targetColumn
+    );
 
-      await saveTargetColumn(
-        datasetId,
-        targetColumn
-      );
-
-      /*
-       * Module 2 will start here.
-       *
-       * For now we stay on this page because
-       * Module 1 is the only implemented module.
-       */
-
-      alert(
-        `Target "${targetColumn}" saved successfully. Module 2 will continue from here.`
-      );
-
-    } catch (err) {
-
-      setError(
-        err.response?.data?.detail ||
-        "Unable to save target column."
-      );
-
-    } finally {
-
-      setSavingTarget(false);
-    }
+    // Move to Module 2 target validation.
+    navigate(
+      `/datasets/${datasetId}/target`
+    );
   }
-
 
   if (loading) {
 
@@ -261,12 +243,12 @@ function DatasetAnalysis() {
 
             <h3>
               {qualityReport.status ===
-              "clean"
+                "clean"
                 ? "Clean"
                 : qualityReport.status ===
                   "usable_with_warnings"
-                ? "Usable with warnings"
-                : "Blocked"}
+                  ? "Usable with warnings"
+                  : "Blocked"}
             </h3>
 
           </div>
@@ -509,12 +491,12 @@ function DatasetAnalysis() {
 
                     const missing =
                       profile.missing_values[
-                        column
+                      column
                       ];
 
                     const unique =
                       profile.unique_values[
-                        column
+                      column
                       ];
 
                     const isId =
@@ -877,19 +859,10 @@ function DatasetAnalysis() {
 
             <button
               className="primary-button"
-              disabled={
-                !targetColumn ||
-                savingTarget
-              }
-              onClick={
-                handleTargetContinue
-              }
+              disabled={!targetColumn}
+              onClick={handleTargetContinue}
             >
-
-              {savingTarget
-                ? "Saving..."
-                : "Continue"}
-
+              Continue
             </button>
 
           </div>

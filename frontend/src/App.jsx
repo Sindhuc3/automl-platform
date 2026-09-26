@@ -1,46 +1,60 @@
 import {
-  BrowserRouter,
-  Navigate,
-  Route,
-  Routes
+    BrowserRouter,
+    Navigate,
+    Route,
+    Routes
 } from "react-router-dom";
 
 import UploadDataset from "./pages/UploadDataset";
 import DatasetAnalysis from "./pages/DatasetAnalysis";
-
+import TargetValidation from "./pages/TargetValidation";
 
 function App() {
 
-  return (
-    <BrowserRouter>
+    return (
+        <BrowserRouter>
 
-      <Routes>
+            <Routes>
 
-        <Route
-          path="/"
-          element={<UploadDataset />}
-        />
+                {/* Module 1 - Upload */}
+                <Route
+                    path="/"
+                    element={<UploadDataset />}
+                />
 
-        <Route
-          path="/analysis/:datasetId"
-          element={<DatasetAnalysis />}
-        />
+                {/* Module 1 - Dataset Analysis */}
+                <Route
+                    path="/datasets/:datasetId"
+                    element={<DatasetAnalysis />}
+                />
 
-        <Route
-          path="*"
-          element={
-            <Navigate
-              to="/"
-              replace
-            />
-          }
-        />
+                {/* Module 2 - Target Validation */}
+                <Route
+                    path="/datasets/:datasetId/target"
+                    element={<TargetValidation />}
+                />
 
-      </Routes>
+                {/* Old route - keep temporarily */}
+                <Route
+                    path="/target"
+                    element={<TargetValidation />}
+                />
 
-    </BrowserRouter>
-  );
+                {/* Unknown routes */}
+                <Route
+                    path="*"
+                    element={
+                        <Navigate
+                            to="/"
+                            replace
+                        />
+                    }
+                />
+
+            </Routes>
+
+        </BrowserRouter>
+    );
 }
-
 
 export default App;
