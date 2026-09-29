@@ -15,12 +15,12 @@ import {
 import "../styles/targetValidation.css";
 
 
-function TargetValidation() {
-
-  const navigate = useNavigate();
+function TargetValidation({ embedded = false, dataset: providedDataset = null }) {
 
   const { datasetId: routeDatasetId } =
     useParams();
+
+  const navigate = useNavigate();
 
 
   // ========================================================
@@ -63,70 +63,40 @@ function TargetValidation() {
 
   useEffect(() => {
 
-    const storedDataset =
-      sessionStorage.getItem(
-        "automlDataset"
-      );
+    if (providedDataset) {
 
+      setDataset(providedDataset);
 
-    if (!storedDataset) {
-
-      setError(
-        "Dataset information is missing."
-      );
-
-      return;
-
-    }
-
-
-    try {
-
-      const parsed =
-        JSON.parse(
-          storedDataset
-        );
-
-
-      const loadedDataset =
-        parsed.dataset || parsed;
-
-
-      setDataset(
-        loadedDataset
-      );
-
-
-      /*
-       * If DatasetAnalysis already stored
-       * a selected target, show it here.
-       */
-
-      const storedTarget =
-        sessionStorage.getItem(
-          "automlSelectedTarget"
-        );
-
-
+      const storedTarget = sessionStorage.getItem("automlSelectedTarget");
       if (storedTarget) {
-
-        setSelectedTarget(
-          storedTarget
-        );
-
+        setSelectedTarget(storedTarget);
       }
 
+      return;
     }
 
-    catch {
+    const storedDataset =
+      sessionStorage.getItem("automlDataset");
 
-      setError(
-        "Unable to read dataset information."
-      );
-
+    if (!storedDataset) {
+      setError("Dataset information is missing.");
+      return;
     }
 
-  }, []);
+    try {
+      const parsed = JSON.parse(storedDataset);
+      const loadedDataset = parsed.dataset || parsed;
+      setDataset(loadedDataset);
+
+      const storedTarget = sessionStorage.getItem("automlSelectedTarget");
+      if (storedTarget) {
+        setSelectedTarget(storedTarget);
+      }
+    } catch {
+      setError("Unable to read dataset information.");
+    }
+
+  }, [providedDataset]);
 
 
   // ========================================================
@@ -270,9 +240,13 @@ function TargetValidation() {
      * result on this page.
      */
 
-    console.log(
-      "Target validated successfully:",
-      result
+    sessionStorage.setItem(
+      "automlTarget",
+      JSON.stringify(result)
+    );
+
+    navigate(
+      `/datasets/${datasetId}/preprocessing`
     );
 
   }
@@ -341,9 +315,9 @@ function TargetValidation() {
 
   return (
 
-    <div className="target-page">
+    <div className={embedded ? "target-panel target-panel-embedded" : "target-page"}>
 
-      <div className="target-container">
+      <div className={embedded ? "target-container target-container-embedded" : "target-container"}>
 
 
         {/* HEADER */}
@@ -351,7 +325,7 @@ function TargetValidation() {
         <div className="target-header">
 
           <span className="module-label">
-            MODULE 2
+            STAGE 02 · TARGET VALIDATION
           </span>
 
           <h1>
@@ -369,7 +343,7 @@ function TargetValidation() {
 
         {/* DATASET SUMMARY */}
 
-        {dataset && (
+        {dataset && !embedded && (
 
           <div className="dataset-summary">
 
@@ -442,10 +416,8 @@ function TargetValidation() {
             value={selectedTarget}
             onChange={(event) => {
 
-              setSelectedTarget(
-                event.target.value
-              );
-
+              setSelectedTarget(event.target.value);
+              sessionStorage.setItem("automlSelectedTarget", event.target.value);
               setResult(null);
 
               setError("");

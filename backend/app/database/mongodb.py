@@ -12,6 +12,7 @@ client = MongoClient(
 database = client[MONGODB_DB_NAME]
 
 datasets_collection = database["datasets"]
+preprocessing_runs_collection = database["preprocessing_runs"]
 
 
 def initialize_database():
@@ -26,6 +27,8 @@ def initialize_database():
     datasets_collection.create_index(
         [("created_at", ASCENDING)]
     )
+    preprocessing_runs_collection.create_index([("run_id", ASCENDING)], unique=True)
+    preprocessing_runs_collection.create_index([("dataset_id", ASCENDING), ("created_at", ASCENDING)])
 
 
 def check_database_connection():

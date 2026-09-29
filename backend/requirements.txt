@@ -7,3 +7,4 @@ openpyxl==3.1.5
 pymongo==4.14.1
 python-dotenv==1.1.1
 pydantic==2.11.7
+scikit-learn==1.7.2

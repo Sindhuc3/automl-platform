@@ -165,29 +165,7 @@ function UploadDataset() {
 
 
   return (
-    <div className="app-shell">
-
-      <header className="topbar">
-
-        <div className="brand">
-
-          <div className="brand-mark">
-            A
-          </div>
-
-          <div>
-            <h1>AutoML Studio</h1>
-
-            <p>
-              Intelligent machine learning pipeline
-            </p>
-          </div>
-
-        </div>
-
-      </header>
-
-
+    <div className="workspace-page">
       <main className="page-container">
 
         <section className="page-heading">
@@ -236,12 +214,7 @@ function UploadDataset() {
               fileInputRef.current?.click();
             }}
           >
-
-            <div className="upload-icon">
-              ↑
-            </div>
-
-            <h3>
+<h3>
               Drop your dataset here
             </h3>
 
@@ -418,7 +391,6 @@ function UploadDataset() {
         </section>
 
       </main>
-
     </div>
   );
 }

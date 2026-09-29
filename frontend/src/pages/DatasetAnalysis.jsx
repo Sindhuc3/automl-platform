@@ -13,6 +13,8 @@ import {
   getDataset
 } from "../services/datasetApi";
 
+import TargetValidation from "./TargetValidation";
+
 
 function DatasetAnalysis() {
 
@@ -32,10 +34,6 @@ function DatasetAnalysis() {
   const [error, setError] =
     useState("");
 
-  const [targetColumn, setTargetColumn] =
-    useState("");
-
-
 
 
   useEffect(() => {
@@ -50,13 +48,6 @@ function DatasetAnalysis() {
           await getDataset(datasetId);
 
         setDataset(result);
-
-        if (result.target_column) {
-
-          setTargetColumn(
-            result.target_column
-          );
-        }
 
       } catch (err) {
 
@@ -104,37 +95,6 @@ function DatasetAnalysis() {
     );
 
 
-  function handleTargetContinue() {
-
-    if (!targetColumn) {
-
-      setError(
-        "Please select a target column."
-      );
-
-      return;
-    }
-
-    setError("");
-
-    // Pass the dataset information to Module 2.
-    sessionStorage.setItem(
-      "automlDataset",
-      JSON.stringify(dataset)
-    );
-
-    // Pass the user's selected target.
-    sessionStorage.setItem(
-      "automlSelectedTarget",
-      targetColumn
-    );
-
-    // Move to Module 2 target validation.
-    navigate(
-      `/datasets/${datasetId}/target`
-    );
-  }
-
   if (loading) {
 
     return (
@@ -173,44 +133,7 @@ function DatasetAnalysis() {
 
 
   return (
-    <div className="app-shell">
-
-      <header className="topbar">
-
-        <div className="brand">
-
-          <div className="brand-mark">
-            A
-          </div>
-
-          <div>
-
-            <h1>
-              AutoML Studio
-            </h1>
-
-            <p>
-              Dataset Analysis
-            </p>
-
-          </div>
-
-        </div>
-
-
-        <div className="dataset-id">
-
-          Dataset ID
-
-          <strong>
-            {dataset.dataset_id}
-          </strong>
-
-        </div>
-
-      </header>
-
-
+    <div className="workspace-page">
       <main className="page-container">
 
         <section className="page-heading">
@@ -385,12 +308,7 @@ function DatasetAnalysis() {
                     className="issue-card warning"
                     key={`${warning.code}-${index}`}
                   >
-
-                    <div className="issue-icon">
-                      !
-                    </div>
-
-                    <div>
+<div>
 
                       <strong>
                         {warning.code.replace(
@@ -803,82 +721,14 @@ function DatasetAnalysis() {
         </section>
 
 
-        {/* TARGET SELECTION */}
+        {/* TARGET VALIDATION — SAME WORKSPACE */}
 
-        <section className="target-card">
-
-          <div>
-
-            <span className="section-label">
-              NEXT STEP
-            </span>
-
-            <h3>
-              Select Target Column
-            </h3>
-
-            <p>
-              Choose the column that you want
-              AutoML to predict.
-            </p>
-
-          </div>
-
-
-          <div className="target-controls">
-
-            <select
-              value={targetColumn}
-              onChange={(event) => {
-                setTargetColumn(
-                  event.target.value
-                );
-                setError("");
-              }}
-            >
-
-              <option value="">
-                Select target column
-              </option>
-
-              {profile.column_names.map(
-                (column) => (
-
-                  <option
-                    value={column}
-                    key={column}
-                  >
-                    {column}
-                  </option>
-
-                )
-              )}
-
-            </select>
-
-
-            <button
-              className="primary-button"
-              disabled={!targetColumn}
-              onClick={handleTargetContinue}
-            >
-              Continue
-            </button>
-
-          </div>
-
-
-          {error && (
-
-            <div className="error-box">
-              {error}
-            </div>
-          )}
-
-        </section>
+        <TargetValidation
+          embedded
+          dataset={dataset}
+        />
 
       </main>
-
     </div>
   );
 }

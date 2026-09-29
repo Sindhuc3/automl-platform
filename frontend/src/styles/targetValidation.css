@@ -376,3 +376,22 @@
   }
 
 }
+/* Embedded target validation: stays inside the Dataset Workspace */
+.target-panel-embedded {
+  width: 100%;
+  padding: 0;
+  background: transparent;
+}
+
+.target-container-embedded {
+  width: 100%;
+  margin: 0;
+}
+
+.target-container-embedded .target-header {
+  margin-bottom: 22px;
+}
+
+.target-container-embedded .target-header h1 {
+  font-size: 30px;
+}
