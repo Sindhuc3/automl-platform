@@ -1,6 +1,7 @@
 from typing import Dict
 
 import pandas as pd
+import numpy as np
 
 
 BOOLEAN_VALUES = {
@@ -133,12 +134,15 @@ def detect_column_type(
 
     if pd.api.types.is_numeric_dtype(series):
 
-        # A numeric column with a small number of
-        # distinct values is treated as categorical.
-        if (
-            unique_count <= 30
-            or unique_ratio < 0.05
-        ):
+        # Only integer-like, low-cardinality numeric columns are treated as
+        # categorical.  A blanket ``<=30 values`` rule can misclassify a
+        # genuinely continuous measurement on a small dataset.
+        numeric = pd.to_numeric(non_null, errors="coerce")
+        integer_like = bool(
+            numeric.notna().all()
+            and np.isclose(numeric.to_numpy(dtype=float), np.round(numeric.to_numpy(dtype=float))).all()
+        )
+        if integer_like and unique_count <= 20 and unique_ratio <= 0.20:
             return "numeric_categorical"
 
         return "numeric"

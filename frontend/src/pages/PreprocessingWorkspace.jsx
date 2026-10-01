@@ -61,6 +61,10 @@ function DecisionCard({ decision, open, onClick }) {
               <strong>{observed.unique_count ?? decision.unique ?? "—"}</strong>
             </div>
             <div>
+              <span>Encoding</span>
+              <strong>{decision.encoding === "ordinal" ? "Ordinal" : decision.encoding === "frequency" ? "Frequency" : decision.encoding === "one_hot" ? "One-Hot" : decision.encoding === "boolean" ? "0/1" : "—"}</strong>
+            </div>
+            <div>
               <span>Status</span>
               <strong>
                 {decision.action === "use" ? "✓ Automatically handled" : "Excluded"}
@@ -293,7 +297,7 @@ export default function PreprocessingWorkspace() {
                   <div className="recipe-grid">
                     <div>
                       <strong>Missing values</strong>
-                      <span>Numeric: median. Categorical: most-frequent below 5%, explicit missing category from 5%.</span>
+                      <span>Numeric strategy is selected from the training distribution; categorical values use most-frequent for low missingness and an explicit missing category when appropriate.</span>
                     </div>
                     <div>
                       <strong>Outliers</strong>
@@ -301,11 +305,11 @@ export default function PreprocessingWorkspace() {
                     </div>
                     <div>
                       <strong>Encoding</strong>
-                      <span>Nominal and numeric-categorical values use one-hot encoding. Boolean values use 0/1.</span>
+                      <span>Automatic mode detects semantic order for ordinal encoding, uses one-hot for unordered categories, frequency encoding for high-cardinality nominal features, and 0/1 for booleans.</span>
                     </div>
                     <div>
                       <strong>High cardinality</strong>
-                      <span>Automatic V1 avoids target encoding and excludes unsafe high-cardinality features.</span>
+                      <span>Identifier/contact columns remain excluded, while high-cardinality nominal features can use leakage-safe frequency encoding instead of creating a huge one-hot block.</span>
                     </div>
                   </div>
                 </ProcessCard>
@@ -473,9 +477,9 @@ export default function PreprocessingWorkspace() {
               </button>
               <button
                 className="primary-button"
-                onClick={() => navigate(`/datasets/${datasetId}/model-selection`)}
+                onClick={() => navigate(`/datasets/${datasetId}/feature-engineering`)}
               >
-                Continue to Model Selection
+                Continue to Feature Engineering
               </button>
             </div>
           </>

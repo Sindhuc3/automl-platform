@@ -7,6 +7,10 @@ from app.database.mongodb import (
 from app.routes.dataset_routes import router as dataset_router
 from app.routes.target_routes import router as target_router
 from app.routes.preprocessing_routes import router as preprocessing_router
+from app.routes.feature_engineering_routes import router as feature_engineering_router
+from app.routes.model_screening_routes import router as model_screening_router
+from app.routes.model_hpo_routes import router as model_hpo_router
+from app.routes.model_arbiter_routes import router as model_arbiter_router
 
 app = FastAPI(
     title="AutoML Studio API",
@@ -52,6 +56,10 @@ app.include_router(
 )
 app.include_router(target_router)
 app.include_router(preprocessing_router)
+app.include_router(feature_engineering_router)
+app.include_router(model_screening_router)
+app.include_router(model_hpo_router)
+app.include_router(model_arbiter_router)
 
 @app.get("/")
 def root():

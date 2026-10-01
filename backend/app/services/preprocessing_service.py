@@ -123,13 +123,6 @@ def _explanation_for_decision(
                 "pipeline to represent the feature reliably. Rather than inventing values for most of the column, "
                 "the pipeline excludes it while preserving the original dataset unchanged."
             )
-        elif reason == "EXCL_HIGH_CARDINALITY":
-            why = (
-                f"{col} contains {unique} distinct values among {row_count - missing_count} non-missing rows. "
-                "A direct one-hot representation would create a high-dimensional feature block and may be unstable "
-                "for a first automatic run. Target encoding is not used automatically because it requires additional "
-                "leakage controls, so the default V1 pipeline excludes this feature instead of guessing."
-            )
         else:
             why = (
                 f"{col} was classified by an earlier validation stage as {decision.get('reason_code', 'unsafe')}. "
@@ -190,10 +183,12 @@ def _explanation_for_decision(
         }
 
     if data_type in {"categorical", "numeric_categorical", "boolean"}:
-        if data_type == "boolean":
-            encoding_text = "0/1 representation"
-        else:
-            encoding_text = "one-hot encoding"
+        encoding_text = {
+            "boolean": "0/1 representation",
+            "one_hot": "one-hot encoding",
+            "ordinal": "ordinal encoding",
+            "frequency": "training-derived frequency encoding",
+        }.get(decision.get("encoding"), "categorical encoding")
 
         if missing_count:
             method = missing_plan.get("method", "most_frequent")
@@ -204,17 +199,16 @@ def _explanation_for_decision(
         else:
             missing_sentence = "It has no missing values in the modeling rows, so no missing-value imputation is required."
 
-        order_sentence = (
-            "The column is treated as categorical rather than assuming that its numeric-looking values have a meaningful order."
-            if data_type == "numeric_categorical"
-            else "No artificial ordering is imposed between its categories."
-        )
-        why = (
-            f"{col} is detected as {data_type} with {unique} distinct observed value(s). "
-            f"{missing_sentence} {order_sentence} "
-            f"The automatic V1 representation uses {encoding_text}; an ordinal relationship is only introduced "
-            "when a later Guided override explicitly supplies a meaningful order."
-        )
+        plan = decision.get("encoding_plan") or {}
+        if decision.get("encoding") == "ordinal":
+            order_sentence = f"A meaningful order was detected and preserved: {plan.get('categories', [])}."
+        elif decision.get("encoding") == "frequency":
+            order_sentence = "The feature is high-cardinality, so training-derived category frequencies are used instead of expanding it into many one-hot columns."
+        elif data_type == "numeric_categorical":
+            order_sentence = "No defensible semantic order was detected, so numeric-looking categories are treated as nominal."
+        else:
+            order_sentence = "No defensible category order was detected, so no artificial ordering is imposed."
+        why = f"{col} is detected as {data_type} with {unique} distinct observed value(s). {missing_sentence} {order_sentence} The automatic representation uses {encoding_text}."
         return {
             "why": why,
             "what_changed": (
@@ -395,14 +389,35 @@ def run_preprocessing(dataset_id: str, mode="automatic", version=1, overrides=No
     # Build per-column missing plans from the training split. The decision thresholds
     # come from the modeling rows, but fitted statistics are learned only from Xtr.
     missing_plans = {}
+    encoding_plans = {}
     for d in decisions:
         if d.get("action") == "use":
             col = d["column"]
             from app.preprocessing.missing_values import missing_plan_for_column
-            missing_plans[col] = missing_plan_for_column(Xtr, col, d.get("data_type"))
+            override = (overrides.get("columns", {}).get(col, {}) or {}).get("imputation")
+            missing_plans[col] = missing_plan_for_column(Xtr, col, d.get("data_type"), override)
+            if d.get("encoding_plan"):
+                encoding_plans[col] = d["encoding_plan"]
 
-    # Automatic outlier treatment is limited to continuous numeric features.
-    caps = fit_iqr_caps(Xtr, numeric)
+    # Outliers are capped only when there is enough evidence that IQR capping
+    # is warranted. A feature with a few legitimate extremes is not modified
+    # merely because it has an IQR fence. Guided mode can explicitly choose
+    # iqr_cap or none per column.
+    outlier_overrides = overrides.get("columns", {}) or {}
+    candidate_caps = fit_iqr_caps(Xtr, numeric)
+    caps = {}
+    for col, bounds in candidate_caps.items():
+        choice = (outlier_overrides.get(col, {}) or {}).get("outlier")
+        if choice == "none":
+            continue
+        if choice == "iqr_cap":
+            caps[col] = bounds
+            continue
+        s = pd.to_numeric(Xtr[col], errors="coerce").dropna()
+        outside = ((s < bounds["lower"]) | (s > bounds["upper"])).mean()
+        skew = abs(float(s.skew())) if len(s) > 2 and np.isfinite(s.skew()) else 0.0
+        if outside >= 0.01 and (skew >= 0.75 or outside >= 0.05):
+            caps[col] = bounds
     Xtr2, oc_train = cap_outliers(Xtr, caps)
     Xte2, oc_test = cap_outliers(Xte, caps)
 
@@ -424,11 +439,11 @@ def run_preprocessing(dataset_id: str, mode="automatic", version=1, overrides=No
     # appropriate profile based on model requirements.
     plain = build_pipeline(
         Xtr2, numeric, categorical, numeric_categorical, boolean,
-        missing_plans, scaled=False
+        missing_plans, scaled=False, encoding_plans=encoding_plans
     )
     scaled = build_pipeline(
         Xtr2, numeric, categorical, numeric_categorical, boolean,
-        missing_plans, scaled=True
+        missing_plans, scaled=True, encoding_plans=encoding_plans
     )
 
     plain.fit(Xtr2, ytr)
@@ -491,7 +506,11 @@ def run_preprocessing(dataset_id: str, mode="automatic", version=1, overrides=No
             elif data_type == "boolean":
                 record["display_action"] = "0/1 encoding"
             else:
-                record["display_action"] = "One-hot encoding"
+                record["display_action"] = {
+                    "one_hot": "One-hot encoding",
+                    "ordinal": "Ordinal encoding",
+                    "frequency": "Frequency encoding",
+                }.get(record.get("encoding"), "Categorical encoding")
         else:
             record["display_action"] = "Excluded"
 
@@ -520,20 +539,20 @@ def run_preprocessing(dataset_id: str, mode="automatic", version=1, overrides=No
         "outliers": outliers,
         "transformations": {
             "missing_values": {
-                "numeric": "median",
+                "numeric": "mean for approximately symmetric numeric features; median for skewed/heavy-tailed features",
                 "categorical_under_5_percent": "most_frequent",
                 "categorical_5_to_60_percent": "__MISSING__ category",
                 "indicator_threshold": ">= 5%",
                 "fit_scope": "training_split_only",
             },
             "encoding": {
-                "nominal_categorical": "OneHotEncoder",
-                "numeric_categorical": "OneHotEncoder unless a Guided ordinal order is supplied",
+                "nominal_categorical": "OneHotEncoder when unordered; FrequencyEncoder for high-cardinality nominal features",
+                "numeric_categorical": "OrdinalEncoder when a defensible order is detected; otherwise OneHotEncoder",
                 "boolean": "0/1",
                 "unknown_categories": "infrequent_if_exist",
                 "min_frequency": 0.01,
                 "max_categories": 20,
-                "high_cardinality": "excluded by automatic V1 safety rule",
+                "high_cardinality": "FrequencyEncoder when safe; identifier/contact columns remain excluded by semantic validation",
             },
             "outliers": {
                 "continuous_numeric_only": True,
@@ -593,7 +612,7 @@ def run_preprocessing(dataset_id: str, mode="automatic", version=1, overrides=No
         "overrides": overrides,
         "test_size": TEST_SIZE,
         "random_seed": RANDOM_SEED,
-        "automatic_encoding_policy": "nominal-safe one-hot; ordinal only via Guided explicit order",
+        "automatic_encoding_policy": "semantic order -> ordinal; unordered nominal -> one-hot; high-cardinality nominal -> frequency; boolean -> 0/1",
         "automatic_scaling_profiles": ["plain", "scaled"],
     }
     _write_artifact(folder, "preprocessing_config.json", config)

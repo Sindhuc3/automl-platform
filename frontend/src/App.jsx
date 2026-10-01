@@ -16,6 +16,7 @@ import Datasets from "./pages/Datasets";
 import Runs from "./pages/Runs";
 import Settings from "./pages/Settings";
 import PreprocessingWorkspace from "./pages/PreprocessingWorkspace";
+import FeatureEngineeringWorkspace from "./pages/FeatureEngineeringWorkspace";
 
 function ShellLayout() {
   return <AppShell />;
@@ -37,6 +38,7 @@ function App() {
           <Route path="/datasets/:datasetId" element={<DatasetAnalysis />} />
           <Route path="/datasets/:datasetId/target" element={<NavigateToDataset />} />
           <Route path="/datasets/:datasetId/preprocessing" element={<PreprocessingWorkspace />} />
+          <Route path="/datasets/:datasetId/feature-engineering" element={<FeatureEngineeringWorkspace />} />
           <Route path="/runs" element={<Runs />} />
           <Route path="/settings" element={<Settings />} />
         </Route>

@@ -6,17 +6,24 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer, MissingIndicator
 from sklearn.preprocessing import StandardScaler, FunctionTransformer
 
-from app.preprocessing.encoding import make_one_hot_encoder
+from app.preprocessing.encoding import make_one_hot_encoder, make_ordinal_encoder, FrequencyEncoder
 
 
 def _boolean_to_int(x):
-    """
-    Convert boolean values to integer 0/1.
-
-    This is defined at module level so the preprocessing
-    pipeline can be safely serialized with pickle.
-    """
     return x.astype(int)
+
+
+def _imputer_for(plan: dict):
+    method = (plan or {}).get("method")
+    if method in {"mean", "median", "most_frequent"}:
+        return SimpleImputer(strategy=method)
+    if method == "constant:__MISSING__":
+        return SimpleImputer(strategy="constant", fill_value="__MISSING__")
+    return None
+
+
+def _group_by_plan(columns: List[str], decisions_by_col: Dict[str, dict], key: str, values: set):
+    return [c for c in columns if (decisions_by_col.get(c, {}).get(key) in values)]
 
 
 def build_pipeline(
@@ -27,274 +34,90 @@ def build_pipeline(
     boolean: List[str],
     missing_plans: Dict[str, dict],
     scaled: bool = False,
+    encoding_plans: Dict[str, dict] | None = None,
 ) -> ColumnTransformer:
-    """
-    Build an unfitted, leakage-safe preprocessing recipe.
-
-    Numeric continuous:
-      - median imputation
-      - StandardScaler only in the scaled profile
-      - missing indicators are separate and never scaled
-
-    Categorical / numeric-categorical:
-      - one-hot encoding
-      - low missingness -> most frequent
-      - >=5% missingness -> explicit __MISSING__ category
-
-    Boolean:
-      - most-frequent imputation
-      - 0/1 representation
-      - missing indicator when the missingness threshold is met
-    """
-
+    """Build one unfitted recipe; actual statistics are fitted only on X_train."""
+    encoding_plans = encoding_plans or {}
     transformers = []
 
-    # ---------------------------------------------------------
-    # NUMERIC FEATURES
-    # ---------------------------------------------------------
-
-    numeric_with_indicator = [
-        c
-        for c in numeric
-        if missing_plans.get(c, {}).get("indicator", False)
-    ]
-
-    numeric_without_indicator = [
-        c
-        for c in numeric
-        if c not in numeric_with_indicator
-    ]
-
-    # Numeric columns without missingness indicators
-    if numeric_without_indicator:
-        steps = [
-            ("imputer", SimpleImputer(strategy="median"))
-        ]
-
+    # Numeric continuous columns are grouped by imputation strategy so the
+    # selected automatic/guided strategy is actually executed, not just displayed.
+    for method in ("mean", "median", None):
+        cols = [c for c in numeric if missing_plans.get(c, {}).get("method") == method]
+        if not cols:
+            continue
+        steps = []
+        if method:
+            steps.append(("imputer", SimpleImputer(strategy=method)))
         if scaled:
-            steps.append(
-                ("scaler", StandardScaler())
-            )
+            steps.append(("scaler", StandardScaler()))
+        transformer = Pipeline(steps) if steps else "passthrough"
+        transformers.append((f"numeric_{method or 'none'}", transformer, cols))
 
-        transformers.append(
-            (
-                "numeric",
-                Pipeline(steps),
-                numeric_without_indicator,
-            )
-        )
+    numeric_indicators = [c for c in numeric if missing_plans.get(c, {}).get("indicator", False)]
+    if numeric_indicators:
+        transformers.append(("numeric_missing_indicators", MissingIndicator(features="all"), numeric_indicators))
 
-    # Numeric columns with missingness indicators
-    if numeric_with_indicator:
-        steps = [
-            ("imputer", SimpleImputer(strategy="median"))
-        ]
-
-        if scaled:
-            steps.append(
-                ("scaler", StandardScaler())
-            )
-
-        transformers.append(
-            (
-                "numeric_missing",
-                Pipeline(steps),
-                numeric_with_indicator,
-            )
-        )
-
-        transformers.append(
-            (
-                "numeric_missing_indicators",
-                MissingIndicator(features="all"),
-                numeric_with_indicator,
-            )
-        )
-
-    # ---------------------------------------------------------
-    # BOOLEAN FEATURES
-    # ---------------------------------------------------------
-
-    bool_indicator = [
-        c
-        for c in boolean
-        if missing_plans.get(c, {}).get("indicator", False)
-    ]
-
-    bool_without_indicator = [
-        c
-        for c in boolean
-        if c not in bool_indicator
-    ]
-
-    # Boolean columns without missingness indicators
-    if bool_without_indicator:
-        transformers.append(
-            (
-                "boolean",
-                Pipeline(
-                    [
-                        (
-                            "imputer",
-                            SimpleImputer(
-                                strategy="most_frequent"
-                            ),
-                        ),
-                        (
-                            "to_int",
-                            FunctionTransformer(
-                                _boolean_to_int,
-                                feature_names_out="one-to-one",
-                            ),
-                        ),
-                    ]
-                ),
-                bool_without_indicator,
-            )
-        )
-
-    # Boolean columns with missingness indicators
-    if bool_indicator:
-        transformers.append(
-            (
-                "boolean_missing",
-                Pipeline(
-                    [
-                        (
-                            "imputer",
-                            SimpleImputer(
-                                strategy="most_frequent"
-                            ),
-                        ),
-                        (
-                            "to_int",
-                            FunctionTransformer(
-                                _boolean_to_int,
-                                feature_names_out="one-to-one",
-                            ),
-                        ),
-                    ]
-                ),
-                bool_indicator,
-            )
-        )
-
-        transformers.append(
-            (
-                "boolean_missing_indicators",
-                MissingIndicator(features="all"),
-                bool_indicator,
-            )
-        )
-
-    # ---------------------------------------------------------
-    # CATEGORICAL FEATURES
-    # ---------------------------------------------------------
+    # Boolean values are represented as 0/1.  This is a representation choice,
+    # not nominal one-hot encoding.
+    for group_name, cols in (("boolean", boolean),):
+        if cols:
+            transformers.append((group_name, Pipeline([
+                ("imputer", SimpleImputer(strategy="most_frequent")),
+                ("to_int", FunctionTransformer(_boolean_to_int, feature_names_out="one-to-one")),
+            ]), cols))
+            bool_indicators = [c for c in cols if missing_plans.get(c, {}).get("indicator", False)]
+            if bool_indicators:
+                transformers.append(("boolean_missing_indicators", MissingIndicator(features="all"), bool_indicators))
 
     cat_cols = categorical + numeric_categorical
+    for encoding in ("one_hot", "ordinal", "frequency"):
+        cols = [c for c in cat_cols if encoding_plans.get(c, {}).get("encoding") == encoding]
+        if not cols:
+            continue
 
-    if cat_cols:
+        # Missing strategy can differ by column, so build a pipeline per
+        # (encoding, imputation) combination.
+        for missing_method in ("most_frequent", "constant:__MISSING__", None):
+            selected = [c for c in cols if missing_plans.get(c, {}).get("method") == missing_method or (missing_method is None and not missing_plans.get(c, {}).get("method"))]
+            if not selected:
+                continue
+            steps = []
+            if missing_method:
+                steps.append(("imputer", _imputer_for(missing_plans[selected[0]])))
+            if encoding == "one_hot":
+                steps.append(("encoder", make_one_hot_encoder()))
+            elif encoding == "frequency":
+                steps.append(("encoder", FrequencyEncoder()))
+            else:
+                # Ordinal categories may differ by column, so they cannot be
+                # represented by one shared OrdinalEncoder with one category list.
+                for col in selected:
+                    pass
+                # handled below per column
+                steps = None
 
-        # Less than 5% missing -> most frequent
-        most_frequent = [
-            c
-            for c in cat_cols
-            if missing_plans.get(c, {}).get("method")
-            == "most_frequent"
-        ]
+            if steps is not None:
+                transformers.append((f"{encoding}_{missing_method or 'none'}", Pipeline(steps), selected))
 
-        # 5% to 60% missing -> explicit missing category
-        constant = [
-            c
-            for c in cat_cols
-            if missing_plans.get(c, {}).get("method")
-            == "constant:__MISSING__"
-        ]
-
-        # No missing-value strategy required
-        no_missing = [
-            c
-            for c in cat_cols
-            if c not in most_frequent
-            and c not in constant
-        ]
-
-        # ---------------------------------------------
-        # Most-frequent categorical imputation
-        # ---------------------------------------------
-
-        if most_frequent:
-            transformers.append(
-                (
-                    "categorical_most_frequent",
-                    Pipeline(
-                        [
-                            (
-                                "imputer",
-                                SimpleImputer(
-                                    strategy="most_frequent"
-                                ),
-                            ),
-                            (
-                                "encoder",
-                                make_one_hot_encoder(),
-                            ),
-                        ]
-                    ),
-                    most_frequent,
-                )
-            )
-
-        # ---------------------------------------------
-        # Explicit missing category
-        # ---------------------------------------------
-
-        if constant:
-            transformers.append(
-                (
-                    "categorical_missing_category",
-                    Pipeline(
-                        [
-                            (
-                                "imputer",
-                                SimpleImputer(
-                                    strategy="constant",
-                                    fill_value="__MISSING__",
-                                ),
-                            ),
-                            (
-                                "encoder",
-                                make_one_hot_encoder(),
-                            ),
-                        ]
-                    ),
-                    constant,
-                )
-            )
-
-        # ---------------------------------------------
-        # Categorical columns without missing values
-        # ---------------------------------------------
-
-        if no_missing:
-            transformers.append(
-                (
-                    "categorical_no_missing",
-                    Pipeline(
-                        [
-                            (
-                                "encoder",
-                                make_one_hot_encoder(),
-                            )
-                        ]
-                    ),
-                    no_missing,
-                )
-            )
-
-    # ---------------------------------------------------------
-    # FINAL COLUMN TRANSFORMER
-    # ---------------------------------------------------------
+    # Ordinal columns require their own category order.
+    ordinal_cols = [c for c in cat_cols if encoding_plans.get(c, {}).get("encoding") == "ordinal"]
+    for col in ordinal_cols:
+        plan = encoding_plans[col]
+        steps = []
+        method = missing_plans.get(col, {}).get("method")
+        categories = list(plan["categories"])
+        if method == "constant:__MISSING__":
+            # Keep the missing state distinct without mixing incompatible
+            # numeric/string category types inside OrdinalEncoder.
+            numeric_categories = all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in categories)
+            sentinel = -1 if numeric_categories else "__MISSING__"
+            categories = categories + [sentinel]
+            steps.append(("imputer", SimpleImputer(strategy="constant", fill_value=sentinel)))
+        elif method:
+            steps.append(("imputer", _imputer_for(missing_plans[col])))
+        steps.append(("encoder", make_ordinal_encoder(categories)))
+        transformers.append((f"ordinal_{col}", Pipeline(steps), [col]))
 
     return ColumnTransformer(
         transformers=transformers,
